@@ -1,6 +1,6 @@
 {
   "name": "worklifebalance",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Claude Code remote session manager via Telegram bot",
   "bin": {
     "worklifebalance": "bin/worklifebalance.js"

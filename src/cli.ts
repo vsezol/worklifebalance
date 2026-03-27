@@ -8,6 +8,7 @@ import { spawn } from "child_process";
 const CONFIG_DIR = path.join(process.env.HOME ?? "", ".worklifebalance");
 const ENV_FILE = path.join(CONFIG_DIR, ".env");
 const PID_FILE = path.join(CONFIG_DIR, "pid");
+const CAFFEINATE_PID_FILE = path.join(CONFIG_DIR, "caffeinate.pid");
 const LOG_FILE = path.join(CONFIG_DIR, "bot.log");
 
 // --- Env file helpers ---
@@ -135,6 +136,18 @@ function cmdStart(env: Record<string, string>) {
     fs.writeFileSync(PID_FILE, String(child.pid));
     console.log(`Bot started (PID: ${child.pid})`);
     console.log(`Logs: ${LOG_FILE}`);
+
+    // Keep Mac awake while bot is running (like Amphetamine)
+    // caffeinate -i prevents idle sleep, -w exits when bot process dies
+    const caffeinate = spawn("caffeinate", ["-i", "-w", String(child.pid)], {
+      detached: true,
+      stdio: "ignore",
+    });
+    caffeinate.unref();
+    if (caffeinate.pid) {
+      fs.writeFileSync(CAFFEINATE_PID_FILE, String(caffeinate.pid));
+      console.log(`Keep-awake enabled (caffeinate PID: ${caffeinate.pid})`);
+    }
   } else {
     console.error("Failed to start bot process.");
     process.exit(1);
@@ -155,6 +168,16 @@ function cmdStop() {
     console.error(`Failed to stop bot: ${err.message}`);
   }
 
+  // Stop caffeinate (it should auto-exit via -w, but clean up just in case)
+  try {
+    const caffPid = parseInt(fs.readFileSync(CAFFEINATE_PID_FILE, "utf-8").trim(), 10);
+    if (!isNaN(caffPid)) {
+      process.kill(caffPid, "SIGTERM");
+      console.log("Keep-awake disabled.");
+    }
+  } catch {}
+  try { fs.unlinkSync(CAFFEINATE_PID_FILE); } catch {}
+
   try { fs.unlinkSync(PID_FILE); } catch {}
 }
 
@@ -165,6 +188,18 @@ function cmdStatus() {
   } else {
     console.log("Bot is not running.");
   }
+
+  // Check caffeinate status
+  let keepAwake = false;
+  try {
+    const caffPid = parseInt(fs.readFileSync(CAFFEINATE_PID_FILE, "utf-8").trim(), 10);
+    if (!isNaN(caffPid)) {
+      process.kill(caffPid, 0);
+      keepAwake = true;
+    }
+  } catch {}
+  console.log(`Awake:  ${keepAwake ? `yes (caffeinate)` : "no"}`);
+
   console.log(`Config: ${ENV_FILE}${fs.existsSync(ENV_FILE) ? "" : " (not found)"}`);
   console.log(`Logs:   ${LOG_FILE}${fs.existsSync(LOG_FILE) ? "" : " (not found)"}`);
   console.log(`PID:    ${PID_FILE}`);
